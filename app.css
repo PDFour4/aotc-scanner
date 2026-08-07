@@ -228,3 +228,33 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
   input,select{border:0;padding:0;background:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* readiness — what would sharpen the figure, and by how much */
+details.ready{margin-top:12px;border-top:1px solid var(--grid);padding-top:10px}
+details.ready summary{font-size:13px;color:var(--ink-2)}
+.ready-body{margin-top:10px;display:flex;flex-direction:column;gap:12px}
+.ready-item{padding-left:11px;border-left:2px solid var(--grid)}
+.ready-item.blocking{border-left-color:var(--crit)}
+.ready-item.material{border-left-color:var(--warn)}
+.ready-what{margin:0;font-size:13.5px;font-weight:600;color:var(--ink)}
+.ready-why{margin:3px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.ready-eff{margin:3px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5}
+.sev{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;
+     text-transform:uppercase;padding:2px 6px;border-radius:4px;margin-right:8px;
+     vertical-align:1px;background:var(--page);border:1px solid var(--edge);color:var(--muted)}
+.sev.blocking{color:var(--crit);border-color:rgba(208,59,59,.35)}
+.sev.material{color:var(--ink);border-color:rgba(250,178,25,.5);background:rgba(250,178,25,.12)}
+
+/* 1098-T drop zone */
+.drop{margin-top:14px;border:1.5px dashed var(--base);border-radius:var(--r);
+      padding:16px;text-align:center;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--s1);background:var(--s1-wash)}
+.drop-label{margin:0;font-size:14px;color:var(--ink-2)}
+.drop-note{margin:5px 0 0;font-size:12px;color:var(--muted);max-width:52ch;
+           margin-left:auto;margin-right:auto;line-height:1.5}
+button.linky{background:none;border:0;padding:0;color:var(--s1-ink);
+             text-decoration:underline;font-size:inherit}
+.review{margin-top:14px;text-align:left;background:var(--page);border:1px solid var(--edge);
+        border-radius:8px;padding:14px 16px}
+.review-head{margin:0 0 10px;font-size:13px;font-weight:650}
+.review-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}

@@ -29,6 +29,7 @@
 
 <script type="module">
 import * as E from './engine.js';
+import { locate1098T, looksScanned } from './extract.js';
 const $ = E.C.of;
 
 let pass = 0, fail = 0;
@@ -227,6 +228,61 @@ is('an empty string is unknown, not zero', $(''), null);
 is('nonsense is unknown, not zero', $('abc'), null);
 is('rounding is half UP, per the Form 1040 convention',
   E.C.rate($(2.50), 1), 250);
+
+/* ───────────────────── reading a Form 1098-T ───────────────────────── */
+group('extract.js — locating the boxes on a Form 1098-T');
+
+// Synthetic fixture with the geometry of a real university-issued 1098-T:
+// the same rows and cell order, neutral figures. Boxes 8 and 9 sit SIDE BY
+// SIDE, which is what made a half-time undergraduate read as a graduate.
+const T = (s,x,y) => ({s,x,y});
+const FORM = [
+  T('Form 1098-T',50,542), T('2024',300,760), T('CORRECTED',330,780),
+  T('Carnegie Mellon University',60,745), T('25-0969449',61,665),
+  T('JANE Q PUBLIC',61,640),
+  T('1 Payments received for',300,740), T('40,000.00',340,724),
+  T('4 Adjustments made for a',300,650), T('0.00',360,627),
+  T('5 Scholarships or grants',420,650), T('25,500.00',440,628),
+  T('6 Adjustments to',300,600), T('0.00',360,580),
+  T('7 Checked if the amount',420,600),
+  T('8',205,569), T('Checked if at least',210,569), T('half-time student',211,558),
+  T('X',285,558),
+  T('9',298,569), T('Checked if a graduate',304,569), T('student',304,558),
+  T('10',397,569), T('Ins. contract reimb./refund',407,569),
+];
+{
+  const f = locate1098T(FORM);
+  is('finds the tax year', f.year, 2024);
+  is('box 1 is the topmost money figure', f.box1, 40000);
+  is('box 5 is the rightmost figure of its row', f.box5, 25500);
+  is('box 4 is the left figure of that same row', f.box4, 0);
+  is('box 8 (at least half-time) reads as ticked', f.halfTime, true);
+  is('box 9 (graduate) reads as NOT ticked', f.graduate, false);
+  is('box 7 reads as NOT ticked — its number is fused with its caption', f.includesPrepayment, false);
+  is('picks up the school EIN', f.ein, '25-0969449');
+  is('picks up the student name, not the form boilerplate', f.studentName, 'JANE Q PUBLIC');
+}
+{
+  // Move the X into box 9's cell: it must flip, and only flip.
+  const grad = FORM.map(i => (i.s === 'X' ? T('X', 378, 558) : i));
+  const f = locate1098T(grad);
+  is('an X in box 9\'s cell reads as graduate', f.graduate, true);
+  is('...and box 8 then reads as not ticked', f.halfTime, false);
+}
+{
+  const f = locate1098T(FORM.filter(i => !/^[\d,]+\.\d\d$/.test(i.s)));
+  is('a form with no figures reports box 1 as not found, never as zero', f.box1, null);
+}
+{
+  // Unknown must never collapse into false: a box whose anchor is absent is
+  // genuinely undetermined, and saying "no" would be a fabricated fact.
+  const noBox9 = FORM.filter(i => i.s !== '9' && !/graduate/.test(i.s));
+  is('a box with no anchor at all reports null, not false',
+    locate1098T(noBox9).graduate, null);
+}
+is('a scan with no text layer is detected rather than misread',
+  looksScanned([T('x',1,1)]), true);
+is('a real form is not mistaken for a scan', looksScanned(FORM), false);
 
 /* ─────────────────────────────── report ────────────────────────────── */
 const s = document.getElementById('summary');

@@ -13,6 +13,7 @@
  */
 
 import * as E from './engine.js';
+import { read1098T } from './extract.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, a = {}, ...kids) => {
@@ -109,8 +110,9 @@ function rows() {
       const deadline = E.refundDeadline(year);
       out.push({
         studentId: s.id, studentName: s.name || 'Unnamed student',
-        year, result, deadline, days: E.daysUntil(deadline),
+        year, input, result, deadline, days: E.daysUntil(deadline),
         returnFiled: y.filed,
+        readiness: E.readiness(input, result),
       });
     }
   }
@@ -205,6 +207,8 @@ function renderStudents() {
         el('cite', {}, '26 U.S.C. 25A(g)(3)')));
     }
 
+    box.append(dropZone(s));
+
     const yearsUsed = Object.keys(s.years).map(Number).sort();
     for (const y of yearsUsed) box.append(renderYear(s, y));
 
@@ -224,6 +228,88 @@ function renderStudents() {
   });
 }
 
+/**
+ * Drop a 1098-T in. It is read in this browser — pdf.js against the PDF's own
+ * text layer, no OCR and no network — and the values are PROPOSED, never
+ * applied. Box 1 and box 5 decide the whole credit; a parser is a heuristic,
+ * and a wrong digit accepted silently would be worse than typing it by hand,
+ * because it would look effortless.
+ */
+function dropZone(s) {
+  const zone = el('div', { class: 'drop' });
+  const input = el('input', { type: 'file', accept: 'application/pdf', hidden: true });
+  const label = el('p', { class: 'drop-label' },
+    'Drop a Form 1098-T PDF here, or ',
+    el('button', { class: 'linky', type: 'button', onclick: () => input.click() }, 'choose a file'));
+  const note = el('p', { class: 'drop-note' },
+    'Read on this device. Nothing is uploaded. Download it from the school portal as a PDF — a photo or scan has no text to read.');
+  const result = el('div');
+  zone.append(input, label, note, result);
+
+  const handle = async (file) => {
+    if (!file) return;
+    result.textContent = '';
+    result.append(el('p', { class: 'drop-note' }, 'Reading ' + file.name + '…'));
+    let r;
+    try { r = await read1098T(file); }
+    catch (err) { r = { ok: false, message: 'Could not read that PDF: ' + err.message }; }
+    result.textContent = '';
+    result.append(reviewCard(s, r));
+  };
+  input.addEventListener('change', () => handle(input.files[0]));
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault(); zone.classList.remove('over');
+    handle(e.dataTransfer.files[0]);
+  });
+  return zone;
+}
+
+function reviewCard(s, r) {
+  if (!r.ok && r.reason === 'scanned') {
+    return el('p', { class: 'why deny' }, r.message);
+  }
+  const f = r.fields || {};
+  const card = el('div', { class: 'review' });
+  card.append(el('p', { class: 'review-head' }, 'Found in that file — check these before applying'));
+
+  const rowsOut = [
+    ['Tax year', f.year, 'high'],
+    ['Box 1 · payments received', f.box1 === null ? null : E.C.fmt(E.C.of(f.box1)), f.confidence?.box1],
+    ['Box 5 · scholarships or grants', f.box5 === null ? null : E.C.fmt(E.C.of(f.box5)), f.confidence?.box5],
+    ['Box 8 · at least half-time', f.halfTime === null ? null : (f.halfTime ? 'yes' : 'no'), 'high'],
+    ['Box 9 · graduate student', f.graduate === null ? null : (f.graduate ? 'yes' : 'no'), 'high'],
+    ['School EIN', f.ein, 'high'],
+  ];
+  for (const [k, v, conf] of rowsOut) {
+    card.append(el('div', { class: 'kv' }, el('span', {}, k),
+      el('span', {}, v === null || v === undefined ? 'not found' : String(v))));
+    void conf;
+  }
+  for (const p of (r.problems || [])) {
+    card.append(el('p', { class: 'why deny' }, 'Could not find ' + p + ' — type it in below.'));
+  }
+  if (f.graduate) {
+    card.append(el('p', { class: 'why warn' },
+      'Box 9 is ticked: a graduate student is not eligible for this credit, only for the Lifetime Learning Credit.',
+      el('cite', {}, '26 U.S.C. 25A(b)(3)')));
+  }
+
+  const canApply = f.year && f.box1 !== null && f.box5 !== null;
+  card.append(el('div', { class: 'review-actions' },
+    canApply
+      ? el('button', { class: 'primary', type: 'button', onclick: () => {
+          const y = s.years[f.year] || blankYear();
+          y.box1 = f.box1; y.box5 = f.box5;
+          if (f.year in s.years === false) s.years[f.year] = y;
+          save(); renderStructure();
+        } }, `Use these for ${f.year}`)
+      : el('span', { class: 'muted-sm' }, 'Not enough was found to fill a year automatically.'),
+    el('span', { class: 'muted-sm' }, 'Always compare against the paper form.')));
+  return card;
+}
+
 function renderYear(s, year) {
   const y = s.years[year];
   const wrap = el('div', { class: 'yr', 'data-y': `${s.id}-${year}` });
@@ -231,6 +317,7 @@ function renderYear(s, year) {
   const meta = E.YEARS[year];
   wrap.append(el('div', { class: 'yr-head' },
     el('div', { class: 'yr-title' }, `Tax year ${year}`,
+      el('span', { id: `conf-${s.id}-${year}` }),
       meta && !meta.verified
         ? el('span', { class: 'chip warning' }, el('span', { class: 'ic' }, '▲'), 'figures unverified')
         : null),
@@ -282,6 +369,12 @@ function renderYear(s, year) {
 
 function paintYearOutputs(all) {
   for (const r of all) {
+    const conf = document.getElementById(`conf-${r.studentId}-${r.year}`);
+    if (conf) {
+      conf.textContent = '';
+      conf.append(el('span', { class: `chip ${CONF[r.readiness.level]}` },
+        el('span', { class: 'ic' }, CONF_ICON[r.readiness.level]), r.readiness.label));
+    }
     const host = document.getElementById(`out-${r.studentId}-${r.year}`);
     if (!host) continue;
     host.textContent = '';
@@ -330,7 +423,30 @@ function paintYearOutputs(all) {
       host.append(el('p', { class: 'why' + (x.kind === 'warn' ? ' warn' : '') }, x.text,
         x.cite ? el('cite', {}, x.cite) : null));
     }
+    host.append(readinessPanel(r));
   }
+}
+
+const CONF = { blocked: 'critical', rough: 'critical', close: 'warning', solid: 'good' };
+const CONF_ICON = { blocked: '✕', rough: '!', close: '▲', solid: '●' };
+
+function readinessPanel(r) {
+  const rd = r.readiness;
+  const d = el('details', { class: 'ready' });
+  const n = rd.items.length;
+  d.append(el('summary', {},
+    n ? `What would sharpen this — ${n} item${n === 1 ? '' : 's'}` : 'Nothing material outstanding'));
+  const body = el('div', { class: 'ready-body' });
+  for (const i of rd.items) {
+    body.append(el('div', { class: `ready-item ${i.severity}` },
+      el('p', { class: 'ready-what' },
+        el('span', { class: `sev ${i.severity}` }, i.severity),
+        i.what),
+      el('p', { class: 'ready-why' }, i.why),
+      el('p', { class: 'ready-eff' }, i.effect)));
+  }
+  d.append(body);
+  return d;
 }
 const kv = (k, v) => el('div', { class: 'kv' }, el('span', {}, k), el('span', {}, v));
 
@@ -558,6 +674,9 @@ document.addEventListener('mousemove', (e) => {
 if ('serviceWorker' in navigator) {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
+
+const verEl = document.getElementById('version');
+if (verEl) verEl.textContent = 'v' + E.VERSION;
 
 $('#saveState').textContent = store.persistent ? 'saved on this device' : 'this session only';
 renderStructure();

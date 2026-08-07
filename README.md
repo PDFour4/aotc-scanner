@@ -38,6 +38,60 @@ No build step, no dependencies. It is plain ES modules:
 python3 -m http.server 8000     # then open http://localhost:8000
 ```
 
+## Drop in a 1098-T
+
+Drag the PDF onto a student and it reads box 1, box 5, box 8, box 9, the tax
+year and the school's EIN, then **proposes** them. You confirm before anything
+is applied.
+
+The reading happens in your browser — `pdf.js` against the PDF's own text
+layer. No OCR, no upload, no API. University-issued 1098-Ts are generated
+documents rather than scans, so the text and its coordinates are already in the
+file. `pdf.js` is lazy-loaded, so the 3 MB only downloads the first time you
+actually drop a PDF.
+
+**Confirm-before-apply is not politeness.** Boxes 1 and 5 decide the entire
+credit, and a form parser is a heuristic — issuers move boxes, fonts change, and
+a photo has no text layer at all. A wrong digit accepted silently would be worse
+than typing it by hand, because it would look effortless.
+
+A photo or a scan is detected and refused rather than guessed at. Download the
+PDF from the school portal instead.
+
+The locator anchors on the form's *structure*, not on pixel coordinates: box 1
+is the topmost figure, box 5 is the rightmost of its row, and the box numbers
+are the cell boundaries for the checkboxes. That last one matters — boxes 8 and
+9 sit side by side, so nearest-label matching read a half-time undergraduate as
+a graduate student, which denies the credit outright.
+
+## It tells you what it doesn't know
+
+Every year carries a confidence chip and a **"what would sharpen this"** panel,
+graded by how much each gap could move the answer:
+
+- **blocking** — nothing can be computed until you supply it (the 1098-T boxes,
+  the claimant's MAGI)
+- **material** — the figure could change substantially or be wiped out (how many
+  AOTC years are already used; whether the student had finished four years of
+  college; **the scholarship award letter**)
+- **minor** — the figure could shift a little (books not yet entered, an
+  unverified year's inflation figures, the Tax Table's ±$2)
+
+The award letter is the one that matters most and the one no amount of
+arithmetic can settle. If the award restricts the money to tuition, the whole
+election is unavailable. Somebody has to read the letter.
+
+## Run it from a terminal
+
+```bash
+node run.mjs --demo
+node run.mjs scenario.json
+```
+
+Same `engine.js` the app runs — nothing re-implemented, nothing approximated.
+This exists for discipline: any figure quoted about these returns should come
+out of here rather than out of somebody's head.
+
 ## Tests
 
 Open `tests.html`. 87 golden fixtures covering the tax table, the dependent

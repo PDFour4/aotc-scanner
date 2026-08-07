@@ -25,6 +25,10 @@
 
 'use strict';
 
+/** Bump on every release. The service worker keys its cache off this, so an
+ *  old cached copy is discarded rather than served forever. */
+export const VERSION = '1.1.0';
+
 /* ────────────────────────────────  money  ─────────────────────────────── */
 
 export const C = {
@@ -465,4 +469,96 @@ export function buildSteps(rows, { claimantName = 'your parents' } = {}) {
 
 export function fmtDate(d) {
   return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/* ─────────────────────────── how solid is this? ───────────────────────── */
+
+/**
+ * What is still missing, and how much it matters.
+ *
+ * A number without its own error bars invites more confidence than it has
+ * earned. This turns "here is $2,500" into "here is $2,500, and here are the
+ * four things that could move it."
+ *
+ * Severities:
+ *   blocking  nothing can be computed until this is supplied
+ *   material  the figure shown could change substantially, or be wiped out
+ *   minor     the figure could shift by a small amount
+ *
+ * Note the last item. The scholarship award terms are the one input that
+ * cannot be computed from anything — somebody has to read the letter. If the
+ * award restricts the money to tuition, this entire approach is unavailable,
+ * and no amount of arithmetic will discover that.
+ */
+export function readiness(input, res) {
+  const items = [];
+  const add = (severity, what, why, effect) => items.push({ severity, what, why, effect });
+
+  if (input.box1 === null || input.box5 === null) {
+    add('blocking', 'Form 1098-T boxes 1 and 5',
+        'Everything starts from what the school reported.',
+        'Nothing can be computed without them.');
+  }
+  if (res.credit === null && input.magi === null) {
+    add('blocking', "The claimant's modified AGI for this year",
+        'Line 11 of their Form 1040. The credit phases out over a $10,000 band ($20,000 joint).',
+        'The credit could be the full amount or nothing at all.');
+  }
+  if (input.priorYearsUsed === null || input.priorYearsUsed === undefined) {
+    add('material', 'How many years the credit was already claimed for this student',
+        'Counting elections by ANY taxpayer, not only the claimant. 25A(b)(2)(A) caps it at four.',
+        'A fifth year is worth $0 — the whole filing would be wasted.');
+  }
+  if (input.completedFourYears === null || input.completedFourYears === undefined) {
+    add('material', 'Whether the student had finished four years of college before this year began',
+        'A separate test from the four-year cap, and constantly confused with it. 25A(b)(2)(C).',
+        'If yes, the credit is denied outright for this year.');
+  }
+  add('material', 'The scholarship award letter',
+      'The election only works where the award terms do NOT restrict the money to tuition. Prop. Reg. 1.25A-5(c)(3).',
+      'If the award is tuition-restricted, this approach is unavailable for that award. Nothing here can tell you — someone has to read it.');
+
+  if (!input.courseMaterials) {
+    const capped = res.qtre !== null && res.qtre >= AOTC.secondTierTop;
+    add(capped ? 'minor' : 'material', 'Books, supplies and required equipment',
+        'They count toward this credit and are almost never on a 1098-T. 25A(f)(1)(D).',
+        capped
+          ? 'Qualified expenses already exceed the $4,000 ceiling, so adding them changes nothing here.'
+          : 'Qualified expenses are under $4,000, so every dollar of books raises the credit directly.');
+  }
+  if (!input.wages && input.wages !== 0) {
+    add('material', "The student's W-2 wages for this year",
+        'They set how much of the elected scholarship is actually taxed.',
+        'Treated as $0 right now, which understates the tax cost if there were wages.');
+  }
+  if (input.taxAsFiled === 0 && res.studentTax > 0) {
+    add('minor', 'Tax shown on the student return as originally filed',
+        'Only the INCREASE over what was already paid counts against the credit.',
+        'Left at $0, the net shown is conservative — the real figure is likely better.');
+  }
+  const y = YEARS[input.year];
+  if (y && !y.verified) {
+    add('minor', `Confirmation of the ${input.year} inflation figures`,
+        y.note || 'The standard deduction and brackets for this year were not checked against its Revenue Procedure.',
+        'The tax cost could move slightly.');
+  }
+  if (res.studentTaxable !== null && taxIsApproximate(res.studentTaxable)) {
+    add('minor', 'The exact figure from the IRS Tax Table',
+        'The table is a published lookup, not a formula. This reproduces it to about $2.',
+        'The tax could differ by a dollar or two. It never changes whether a year is worth filing.');
+  }
+
+  const rank = { blocking: 0, material: 1, minor: 2 };
+  items.sort((a, b) => rank[a.severity] - rank[b.severity]);
+
+  const blocking = items.filter(i => i.severity === 'blocking').length;
+  const material = items.filter(i => i.severity === 'material').length;
+  const level = blocking ? 'blocked' : material > 2 ? 'rough' : material ? 'close' : 'solid';
+  const label = {
+    blocked: 'Not enough to compute yet',
+    rough: 'Rough — several facts still open',
+    close: 'Close — a few facts to confirm',
+    solid: 'Solid — nothing material outstanding',
+  }[level];
+  return { level, label, items, blocking, material };
 }

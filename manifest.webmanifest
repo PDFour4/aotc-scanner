@@ -1,0 +1,13 @@
+{
+  "name": "AOTC Scanner",
+  "short_name": "AOTC",
+  "description": "Find unclaimed American Opportunity Tax Credit across open tax years. Runs entirely on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f9f9f7",
+  "theme_color": "#fcfcfb",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

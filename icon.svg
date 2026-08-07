@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="AOTC Scanner">
+  <rect width="192" height="192" rx="42" fill="#2a78d6"/>
+  <g stroke="#fff" stroke-width="15" stroke-linecap="round" fill="none">
+    <path d="M46 140V86"/><path d="M79 140V56"/><path d="M112 140V104"/><path d="M145 140V72"/>
+  </g>
+</svg>

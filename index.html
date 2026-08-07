@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AOTC Scanner</title>
+<meta name="description" content="Find unclaimed American Opportunity Tax Credit across open tax years. Runs entirely in your browser.">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<header class="topbar">
+  <div class="wrap navrow">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" class="mark">
+        <path d="M4 19V9m5 10V5m5 14v-7m5 7V8" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" fill="none"/>
+      </svg>
+      <span>AOTC Scanner</span>
+    </div>
+    <div class="bar-actions">
+      <span id="saveState" class="save-state" aria-live="polite"></span>
+      <button id="themeBtn" class="ghost" type="button" title="Light / dark">◐</button>
+      <button id="dataBtn" class="ghost" type="button">Data</button>
+      <button id="printBtn" class="ghost" type="button">Print</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="summary" aria-label="Summary"></section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Who claims the students</h2>
+    </div>
+    <div class="card" id="claimant"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Students</h2>
+      <button id="addStudent" class="primary" type="button">+ Add student</button>
+    </div>
+    <div id="students"></div>
+  </section>
+
+  <section id="resultsSection" hidden>
+    <div class="sec-head"><h2>What each year is worth</h2></div>
+    <div class="card"><div id="chart" class="chart"></div></div>
+    <div class="card table-card"><div id="tableWrap"></div></div>
+  </section>
+
+  <section id="planSection" hidden>
+    <div class="sec-head">
+      <h2>What to do</h2>
+      <span id="progressTxt" class="muted-sm"></span>
+    </div>
+    <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+    <div id="steps"></div>
+  </section>
+
+  <footer>
+    <p><strong>Everything stays on this device.</strong> There is no server and no account.
+      Your figures are computed in this browser and saved only to this browser's local
+      storage. Nothing is transmitted anywhere — which is deliberate: IRC §7216 makes it a
+      criminal offence to use taxpayer information for any purpose other than preparing the
+      return, and the surest way never to do that is never to hold it.</p>
+    <p>Every conclusion cites the statute behind it so it can be checked against the primary
+      source. This is a research tool, not tax advice. Have a preparer review anything before
+      it is filed.</p>
+    <p class="muted-sm">Open source · <a href="tests.html">run the test suite</a></p>
+  </footer>
+</main>
+
+<dialog id="dataDlg">
+  <form method="dialog">
+    <h3>Your data</h3>
+    <p class="muted-sm">Saved in this browser only. Export a file to move it to another
+      device or to keep a backup.</p>
+    <div class="dlg-actions">
+      <button id="exportBtn" class="primary" type="button">Export a backup file</button>
+      <button id="importBtn" class="ghost" type="button">Import a backup</button>
+      <input id="importFile" type="file" accept="application/json" hidden>
+      <button id="demoBtn" class="ghost" type="button">Load the worked example</button>
+      <button id="clearBtn" class="danger" type="button">Erase everything</button>
+    </div>
+    <div class="dlg-close"><button class="ghost" value="close">Close</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="ui.js"></script>
+</body>
+</html>

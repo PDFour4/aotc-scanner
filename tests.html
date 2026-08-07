@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AOTC Scanner — tests</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .t{font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .pass{color:var(--good-ink)} .fail{color:var(--crit);font-weight:600}
+  .case{padding:5px 0;border-bottom:1px solid var(--grid)}
+  .grp{margin-top:26px;font-weight:650;font-size:13px;letter-spacing:.06em;
+       text-transform:uppercase;color:var(--muted)}
+  #hdr{font-size:26px;font-weight:650;margin:0 0 6px}
+  .detail{color:var(--ink-2);padding-left:24px;font-size:13px}
+</style>
+</head>
+<body>
+<main class="wrap" style="padding-top:32px;padding-bottom:60px">
+  <p id="hdr">Test suite</p>
+  <p class="muted-sm" style="margin:0 0 4px">
+    These fixtures mirror the Python suite one-for-one. Two implementations of the
+    same statute that must agree — if one drifts, a case here goes red.
+    Every expected figure is derived by hand in its own name.
+  </p>
+  <p id="summary" class="t" style="margin:18px 0"></p>
+  <div id="out" class="t"></div>
+</main>
+
+<script type="module">
+import * as E from './engine.js';
+const $ = E.C.of;
+
+let pass = 0, fail = 0;
+const out = document.getElementById('out');
+
+function group(name){ out.append(Object.assign(document.createElement('div'),
+  {className:'grp', textContent:name})); }
+
+function is(name, got, want, note=''){
+  const ok = got === want;
+  ok ? pass++ : fail++;
+  const d = document.createElement('div');
+  d.className = 'case';
+  d.innerHTML = `<span class="${ok?'pass':'fail'}">${ok?'PASS':'FAIL'}</span> ${name}`
+    + (ok ? '' : `<div class="detail">got <b>${got}</b>, expected <b>${want}</b></div>`)
+    + (note && !ok ? `<div class="detail">${note}</div>` : '');
+  out.append(d);
+}
+const money = (n, w, want, note) => is(n, E.C.fmt(w,{cents:true}), E.C.fmt($(want),{cents:true}), note);
+
+/* ───────────────────────── the IRS Tax Table ───────────────────────── */
+group('IRC 1 — the Tax Table, not bracket arithmetic');
+
+money('2024 taxable $2,589 -> $258 by the midpoint rule',
+  E.taxOn($(2589), 2024), 258);
+is('...and the real 2024 return said $259 — a KNOWN $1 variance, within tolerance',
+  Math.abs(E.taxOn($(2589), 2024) - $(259)) <= E.TAX_TOLERANCE, true);
+is('the Tax Table is a lookup, not a formula, so tax is flagged approximate',
+  E.taxIsApproximate($(2589)), true);
+is('above $100,000 the table does not apply and the rates are exact',
+  E.taxIsApproximate($(150000)), false);
+money('2025 taxable $5,308 -> $533 (as filed on the real return)',
+  E.taxOn($(5308), 2025), 533,
+  'Straight 10% gives $530.80. The table says $533. That gap is the point.');
+money('2025 taxable $3,308 -> $333', E.taxOn($(3308), 2025), 333);
+money('2024 taxable $8,265 -> $828', E.taxOn($(8265), 2024), 828);
+money('zero taxable income -> zero tax', E.taxOn(0, 2025), 0);
+money('negative taxable income -> zero tax', E.taxOn($(-500), 2025), 0);
+is('an uncovered year returns null rather than guessing', E.taxOn($(5000), 1999), null);
+
+/* ────────────────── dependent standard deduction ───────────────────── */
+group('IRC 63(c)(5) — a dependent\'s standard deduction');
+
+money('2023, $7,181 earned -> $7,581 (earned + $400, under the cap)',
+  E.dependentStandardDeduction(2023, $(7181)), 7581);
+money('2024, $22,865 earned -> capped at $14,600',
+  E.dependentStandardDeduction(2024, $(22865)), 14600);
+money('2025, $19,058 earned -> capped at $15,750',
+  E.dependentStandardDeduction(2025, $(19058)), 15750);
+money('2024, no income -> the $1,300 floor',
+  E.dependentStandardDeduction(2024, 0), 1300);
+is('unknown earned income yields null, never zero',
+  E.dependentStandardDeduction(2024, null), null);
+
+is('2023: $7,181 of scholarship is UNDER the filing threshold',
+  E.dependentMustFile(2023, $(7181), $(7181)), false);
+is('2024: $9,908 of scholarship is UNDER the filing threshold',
+  E.dependentMustFile(2024, $(9908), $(9908)), false);
+is('2024: $22,865 is OVER it', E.dependentMustFile(2024, $(22865), $(22865)), true);
+
+/* ────────────────────────── 25A(b)(1) tiers ────────────────────────── */
+group('IRC 25A(b)(1) — 100% of the first $2,000 + 25% of the next $2,000');
+
+for (const [exp, want] of [[0,0],[1000,1000],[2000,2000],[3000,2250],[4000,2500],[10000,2500]]) {
+  money(`$${exp.toLocaleString()} of qualified expenses -> $${want.toLocaleString()}`,
+    E.creditFromExpenses($(exp)), want);
+}
+
+/* ──────────────────────── 25A(d)(1) phase-out ──────────────────────── */
+group('IRC 25A(d)(1) — the modified AGI limitation');
+
+for (const [magi, want] of [[80000,2500],[82500,1875],[85000,1250],[90000,0],[95000,0]]) {
+  money(`single, MAGI $${magi.toLocaleString()} -> $${want.toLocaleString()}`,
+    E.applyPhaseout($(2500), $(magi), 'single'), want);
+}
+for (const [magi, want] of [[160000,2500],[170000,1250],[180000,0]]) {
+  money(`joint, MAGI $${magi.toLocaleString()} -> $${want.toLocaleString()}`,
+    E.applyPhaseout($(2500), $(magi), 'mfj'), want);
+}
+is('unknown MAGI yields null — it is not "under the threshold"',
+  E.applyPhaseout($(2500), null, 'single'), null);
+money('married filing separately is barred outright',
+  E.applyPhaseout($(2500), $(10000), 'mfs'), 0);
+
+/* ───────────────── the real returns this was built from ────────────── */
+group('End to end — the returns this tool was built from');
+
+{ // 2023: box 1 31,360 / box 5 34,541, no wages, never filed.
+  const r = E.optimalElection({ year:2023, box1:$(31360), box5:$(34541), wages:0,
+    magi:$(120000), filingStatus:'mfj', priorYearsUsed:0, completedFourYears:false });
+  money('2023 scholarship already taxable = $3,181 (box 5 - box 1)', r.naturalExcess, 3181);
+  money('2023 elect $4,000 more — the cap of what is useful', r.elect, 4000);
+  money('2023 report on Schedule 1 line 8r = $7,181', r.reportOnLine8r, 7181);
+  money('2023 qualified expenses freed = $4,000', r.qtre, 4000);
+  money('2023 credit = $2,500', r.credit, 2500);
+  money('2023 refundable 40% = $1,000', r.refundable, 1000);
+  money('2023 student tax = $0 — the deduction rises with the income', r.studentTax, 0);
+  money('2023 NET = $2,500, entirely free', r.net, 2500);
+  is('2023 student was not required to file', r.mustFile, false);
+}
+
+{ // 2024: box 1 63,893 / box 5 65,569, wages 17,189, filed with $259 of tax.
+  const r = E.computeYear({ year:2024, box1:$(63893), box5:$(65569), wages:$(17189),
+    taxAsFiled:$(259), elect:$(4000), magi:$(120000), filingStatus:'mfj',
+    priorYearsUsed:0, completedFourYears:false });
+  money('2024 scholarship already taxable = $1,676', r.naturalExcess, 1676);
+  money('2024 report on line 8r = $5,676', r.reportOnLine8r, 5676);
+  money('2024 credit = $2,500', r.credit, 2500);
+  money('2024 tax on the corrected return = $828', r.studentTax, 828);
+  money('2024 EXTRA tax = $569 — $828 less the $259 already paid', r.additionalTax, 569);
+  money('2024 NET = $1,931', r.net, 1931);
+}
+
+{ // The younger sibling, 2024: box 1 32,533 / box 5 38,441, no wages, never filed.
+  const r = E.optimalElection({ year:2024, box1:$(32533), box5:$(38441), wages:0,
+    magi:$(120000), filingStatus:'mfj', priorYearsUsed:0, completedFourYears:false });
+  money('sibling 2024 already taxable = $5,908', r.naturalExcess, 5908);
+  money('sibling 2024 report on line 8r = $9,908', r.reportOnLine8r, 9908);
+  money('sibling 2024 credit = $2,500', r.credit, 2500);
+  money('sibling 2024 student tax = $0', r.studentTax, 0);
+  money('sibling 2024 NET = $2,500', r.net, 2500);
+}
+
+{ // 2025 as actually filed: $6,000 elected where $4,000 was the optimum.
+  const base = { year:2025, box1:$(66283), box5:$(66697), wages:$(14644),
+    magi:$(120000), filingStatus:'mfj', priorYearsUsed:0, completedFourYears:false };
+  const filed = E.computeYear({ ...base, elect:$(6000) });
+  const best  = E.optimalElection(base);
+  money('2025 as filed: reported $6,414 on line 8r', filed.reportOnLine8r, 6414);
+  money('2025 as filed: tax $533', filed.studentTax, 533);
+  money('2025 optimum: report $4,414 instead', best.reportOnLine8r, 4414);
+  money('2025 optimum: tax $333', best.studentTax, 333);
+  money('2025 the credit is $2,500 either way', filed.credit, 2500);
+  money('2025 over-allocating cost $200', filed.studentTax - best.studentTax, 200);
+  is('the optimiser flags the over-allocation',
+    E.computeYear({ ...base, elect:$(6000) }).reasons.some(r => r.kind === 'warn'), true);
+}
+
+/* ─────────────────────────── the hard bars ─────────────────────────── */
+group('IRC 25A — the disqualifiers');
+
+const ok = { year:2024, box1:$(10000), box5:0, wages:0, magi:$(50000),
+             filingStatus:'single', priorYearsUsed:0, completedFourYears:false };
+money('a clean case gets the full $2,500', E.computeYear(ok).credit, 2500);
+is('four prior years bars it',
+  E.computeYear({...ok, priorYearsUsed:4}).reasons[0].cite, '26 U.S.C. 25A(b)(2)(A)');
+is('finishing four years of college bars it separately',
+  E.computeYear({...ok, completedFourYears:true}).reasons[0].cite, '26 U.S.C. 25A(b)(2)(C)');
+is('three prior years is still fine',
+  E.computeYear({...ok, priorYearsUsed:3}).credit, $(2500));
+is('married filing separately bars it',
+  E.computeYear({...ok, filingStatus:'mfs'}).reasons[0].cite, '26 U.S.C. 25A(g)(6)');
+is('a year outside coverage is refused, not guessed at',
+  E.computeYear({...ok, year:2019}).reasons[0].kind, 'out-of-scope');
+
+/* ──────────────────────── unknown is not zero ──────────────────────── */
+group('Unknown is not zero — the failure this tool exists to prevent');
+
+is('missing 1098-T figures leave the credit null, not $0',
+  E.computeYear({...ok, box1:null, box5:null}).credit, null);
+is('...and name what is missing',
+  E.computeYear({...ok, box1:null, box5:null}).missing.length > 0, true);
+is('missing MAGI leaves the credit null',
+  E.computeYear({...ok, magi:null}).credit, null);
+is('an unanswered four-year question is recorded as missing',
+  E.computeYear({...ok, priorYearsUsed:null}).missing.some(m => m.includes('prior years')), true);
+
+/* ───────────────────────────── IRC 6511 ────────────────────────────── */
+group('IRC 6511 / 6513(a) / 7503 — the refund window');
+
+const iso = d => d.toISOString().slice(0,10);
+is('TY2022 was due 17 Apr 2023 — the 15th was a Saturday',
+  iso(E.statutoryDueDate(2022)), '2023-04-17');
+is('TY2023 window closes 15 Apr 2027', iso(E.refundDeadline(2023)), '2027-04-15');
+is('TY2024 window closes 17 Apr 2028', iso(E.refundDeadline(2024)), '2028-04-17');
+is('TY2025 window closes 16 Apr 2029', iso(E.refundDeadline(2025)), '2029-04-16');
+is('filing early does not start the clock early (6513(a))',
+  iso(E.refundDeadline(2023, '2024-02-01')), '2027-04-15');
+is('filing late uses the actual date',
+  iso(E.refundDeadline(2023, '2024-10-03')), '2027-10-04');
+is('TY2023 had 252 days left on 6 Aug 2026',
+  E.daysUntil(E.refundDeadline(2023), '2026-08-06'), 252);
+is('TY2022 had already closed by then',
+  E.daysUntil(E.refundDeadline(2022), '2026-08-06') < 0, true);
+is('a closed window reads as closed, with an icon and a word',
+  E.urgency(-5).word, 'closed');
+is('120 days out reads as closing soon', E.urgency(90).role, 'critical');
+
+/* ────────────────────────────── money ──────────────────────────────── */
+group('Money is integer cents — floats never touch a tax figure');
+
+is('0.1 + 0.2 is exactly 0.3 here', E.C.add($(0.1), $(0.2)) === $(0.3), true);
+is('$19.99 parses exactly', $(19.99), 1999);
+is('commas and dollar signs are tolerated', $('$66,283'), 6628300);
+is('an empty string is unknown, not zero', $(''), null);
+is('nonsense is unknown, not zero', $('abc'), null);
+is('rounding is half UP, per the Form 1040 convention',
+  E.C.rate($(2.50), 1), 250);
+
+/* ─────────────────────────────── report ────────────────────────────── */
+const s = document.getElementById('summary');
+s.innerHTML = fail === 0
+  ? `<span class="pass">ALL ${pass} CHECKS PASS</span>`
+  : `<span class="fail">${fail} FAILED</span> · ${pass} passed`;
+document.title = (fail ? `${fail} FAILED — ` : '') + 'AOTC Scanner tests';
+</script>
+</body>
+</html>

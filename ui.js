@@ -158,9 +158,17 @@ function renderClaimant() {
       .map(([v, t]) => el('option', { value: v, selected: c.filingStatus === v }, t)));
   status.addEventListener('change', () => { c.filingStatus = status.value; save(); recompute(); });
 
-  host.append(el('div', { class: 'grid g2' },
+  const ST = ['', 'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA',
+    'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND',
+    'OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+  const stSel = el('select', {}, ...ST.map(v =>
+    el('option', { value: v, selected: (c.state || '') === v }, v || 'Select…')));
+  stSel.addEventListener('change', () => { c.state = stSel.value; save(); recompute(); });
+
+  host.append(el('div', { class: 'grid g3' },
     field('Who claims the students', 'appears in the instructions', name),
-    field('Their filing status', 'sets the phase-out band', status)));
+    field('Their filing status', 'sets the phase-out band', status),
+    field('State they file from', 'sets the IRS mailing address', stSel)));
 
   const years = [...new Set(state.students.flatMap(s => Object.keys(s.years)))].sort();
   if (years.length) {
@@ -541,7 +549,10 @@ function paintTable(live) {
 }
 
 function paintSteps(live) {
-  const steps = E.buildSteps(live, { claimantName: state.claimant.name || 'your parents' });
+  const steps = E.buildSteps(live, {
+    claimantName: state.claimant.name || 'your parents',
+    state: state.claimant.state || '',
+  });
   const host = $('#steps');
   host.textContent = '';
   for (const s of steps) {
@@ -565,6 +576,21 @@ function paintSteps(live) {
       el('p', { class: 'step-head', html: `<span class="step-n">${s.n}</span>${escapeHtml(s.head)}` }),
       meta,
       el('p', {}, s.body),
+      s.links ? el('div', { class: 'links' },
+        ...s.links.map(l => el('a', { href: l.url, target: '_blank', rel: 'noopener' },
+          el('span', { class: 'lk-ic' }, '↗'), l.label))) : null,
+      s.howNotes ? el('ul', { class: 'hownotes' },
+        ...s.howNotes.map(n => el('li', {}, n))) : null,
+      s.mail ? el('div', { class: 'mailbox' },
+        el('p', { class: 'mail-h' }, 'Mail it to'),
+        el('address', {}, ...s.mail.lines.map(l => el('div', {}, l))),
+        el('p', { class: 'mail-n' }, s.mail.note),
+        el('p', { class: 'mail-n' }, 'Verified ', s.mail.verified,
+          '. IRS addresses do change — ',
+          el('a', { href: s.mailLookup, target: '_blank', rel: 'noopener' }, 'check the current one'),
+          ' before posting.')) : (s.mailLookup ? el('p', { class: 'mail-n' },
+            'Set your state above to see the mailing address, or ',
+            el('a', { href: s.mailLookup, target: '_blank', rel: 'noopener' }, 'look it up'), '.') : null),
       s.blockedBy ? el('p', { class: 'step-body blocked' }, '⚠',
         el('span', {}, `Do this first: ${s.blockedBy}`)) : null,
       s.cite ? el('details', {}, el('summary', {}, 'Why — the rule this rests on'),

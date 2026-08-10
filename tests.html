@@ -284,6 +284,80 @@ is('a scan with no text layer is detected rather than misread',
   looksScanned([T('x',1,1)]), true);
 is('a real form is not mistaken for a scan', looksScanned(FORM), false);
 
+/* ─────────────────── where to get it, where to send it ─────────────── */
+group('Filing logistics — forms, addresses, and the Part that moved');
+
+is('prior-year forms use the DOUBLE-hyphen path',
+  E.FORM_URL.prior('f1040', 2023), 'https://www.irs.gov/pub/irs-prior/f1040--2023.pdf');
+is('2023 Schedule 1', E.FORM_URL.prior('f1040s1', 2023),
+  'https://www.irs.gov/pub/irs-prior/f1040s1--2023.pdf');
+is('2024 Form 8863 — the attachment must match the year',
+  E.FORM_URL.prior('f8863', 2024), 'https://www.irs.gov/pub/irs-prior/f8863--2024.pdf');
+is('Form 1040-X is current-revision, not year-specific',
+  E.FORM_URL.current('f1040x'), 'https://www.irs.gov/pub/irs-pdf/f1040x.pdf');
+
+// Rev. December 2025 renumbered Form 1040-X. Guidance that still says
+// "explain in Part III" now points at Direct Deposit, which a paper filer
+// must leave blank. Form layout drifts like tax law and needs the same
+// effective-date treatment.
+is('today the explanation goes in Part II', E.PART_EXPLANATION(), 'Part II');
+is('before the Dec 2025 revision it was Part III',
+  E.PART_EXPLANATION(new Date(Date.UTC(2025, 5, 1))), 'Part III');
+is('on the revision date itself it is Part II',
+  E.PART_EXPLANATION(new Date(Date.UTC(2025, 11, 1))), 'Part II');
+
+{
+  const a = E.mailingAddress('TX', '1040');
+  is('a Texas original 1040 with no payment goes to Austin -0002',
+    a.lines[2], 'Austin, TX 73301-0002');
+  const x = E.mailingAddress('TX', '1040x');
+  is('a Texas 1040-X goes to Austin -0052', x.lines[2], 'Austin, TX 73301-0052');
+  is('the two are NOT the same address', a.lines[2] === x.lines[2], false);
+  is('every shipped address carries the date it was checked', !!x.verified, true);
+}
+is('an unverified state returns null rather than a guessed address',
+  E.mailingAddress('CA', '1040'), null);
+is('...and so does a state we have no 1040 entry for',
+  E.mailingAddress('OK', '1040'), null);
+is('but the 1040-X Austin group does cover Oklahoma',
+  E.mailingAddress('OK', '1040x').lines[2], 'Austin, TX 73301-0052');
+is('no state at all returns null', E.mailingAddress('', '1040x'), null);
+
+{
+  // MeF takes the current year plus two prior; the window rolls at the annual
+  // cutover, which lands somewhere between mid-November and late December.
+  const w = E.efileWindow(new Date(Date.UTC(2026, 7, 10)));
+  is('in August 2026 the e-file window is 2025/2024/2023', w.years.join(','), '2025,2024,2023');
+  is('it is always three years wide', w.years.length, 3);
+  const after = E.efileWindow(new Date(Date.UTC(2026, 11, 31)));
+  is('after the December cutover 2023 drops off', after.years.includes(2023), false);
+}
+
+{
+  const rows = [{ studentName: 'A', year: 2023, returnFiled: false, days: 249,
+    deadline: E.refundDeadline(2023),
+    result: E.optimalElection({ year:2023, box1:$(31360), box5:$(34541), wages:0,
+      magi:$(120000), filingStatus:'mfj', priorYearsUsed:0, completedFourYears:false }) }];
+  const steps = E.buildSteps(rows, { claimantName: 'the parents', state: 'TX' });
+  const student = steps.find(s => /reports the scholarship/.test(s.head));
+  const claimant = steps.find(s => /claim the credit/.test(s.head));
+
+  is('the student step links the actual prior-year 1040',
+    student.links.some(l => l.url.includes('f1040--2023')), true);
+  is('the student step gives a mailing address', student.mail.lines[2], 'Austin, TX 73301-0002');
+  is('the claimant step links that year\'s Form 8863',
+    claimant.links.some(l => l.url.includes('f8863--2023')), true);
+  is('the claimant step gives the 1040-X address', claimant.mail.lines[2], 'Austin, TX 73301-0052');
+  is('the explanation instruction says Part II, not Part III',
+    claimant.howNotes.some(n => n.includes('Part II of Form 1040-X')), true);
+  is('...and warns that older guidance is now wrong',
+    claimant.howNotes.some(n => /RENUMBERED/.test(n)), true);
+  is('it says NOT to attach the 1098-T',
+    claimant.howNotes.some(n => /Do NOT attach the Form 1098-T/.test(n)), true);
+  is('the unfiled year warns that consumer software will not e-file it',
+    student.howNotes.some(n => /refuses to e-file prior years/.test(n)), true);
+}
+
 /* ─────────────────────────────── report ────────────────────────────── */
 const s = document.getElementById('summary');
 s.innerHTML = fail === 0

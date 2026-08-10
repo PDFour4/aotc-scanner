@@ -6,7 +6,7 @@
  * It never caches user data, because user data never leaves the page. There is
  * no API to cache; the whole computation is local.
  */
-const CACHE = 'aotc-1.1.0';   // keep in step with VERSION in engine.js
+const CACHE = 'aotc-1.2.0';   // keep in step with VERSION in engine.js
 // The pdf.js vendor files are deliberately NOT precached: 3 MB most sessions
 // never need. The fetch handler caches them the first time a PDF is dropped.
 const SHELL = ['./', './index.html', './app.css', './engine.js', './ui.js',

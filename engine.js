@@ -27,7 +27,7 @@
 
 /** Bump on every release. The service worker keys its cache off this, so an
  *  old cached copy is discarded rather than served forever. */
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 
 /* ────────────────────────────────  money  ─────────────────────────────── */
 
@@ -387,13 +387,97 @@ export function urgency(days) {
   return { role: 'good', icon: '●', word: 'open' };
 }
 
+
+/* ─────────────────────── where to get it, where to send it ────────────── */
+
+/**
+ * Form URLs, mailing addresses and filing mechanics.
+ *
+ * All verified live on 10 August 2026. Two things here are worth knowing
+ * before editing:
+ *
+ * 1. Prior-year forms live at /pub/irs-prior/{form}--{year}.pdf — note the
+ *    DOUBLE hyphen. Current and non-year-specific forms live at /pub/irs-pdf/.
+ *
+ * 2. Form 1040-X is NOT year-specific: one current revision covers every year,
+ *    with the year written into a blank field. But the Form 8863 attached to
+ *    it MUST be that year's version. Getting this backwards is a common way to
+ *    have an amendment bounced.
+ *
+ * The layout facts are versioned data, not hardcoded strings, for a reason —
+ * see PART_EXPLANATION below.
+ */
+export const FORM_URL = {
+  prior: (form, year) => `https://www.irs.gov/pub/irs-prior/${form}--${year}.pdf`,
+  current: (form) => `https://www.irs.gov/pub/irs-pdf/${form}.pdf`,
+};
+
+/**
+ * Which numbered Part of Form 1040-X holds the explanation of changes.
+ *
+ * Revision December 2025 RENUMBERED the form: Part I is now Dependents,
+ * Part II is the Explanation of Changes, and Part III is Direct Deposit.
+ * Before that revision the explanation was Part III.
+ *
+ * This is stored as dated data rather than a literal because a stale "write it
+ * in Part III" instruction is now actively harmful: Part III is direct-deposit
+ * details, which a paper filer must leave blank. Form layout drifts the same
+ * way tax law does, and deserves the same treatment.
+ */
+export const PART_EXPLANATION = (asOf = new Date()) =>
+  asOf >= new Date(Date.UTC(2025, 11, 1)) ? 'Part II' : 'Part III';
+
+/**
+ * Verified mailing addresses. Deliberately sparse: only what was actually
+ * checked is here, and everything else falls through to the IRS lookup page.
+ * A confidently wrong address sends a refund claim into a void.
+ */
+const AUSTIN_GROUP = ['AL', 'AR', 'FL', 'GA', 'LA', 'MS', 'OK', 'TX'];
+
+export const WHERE_TO_FILE = {
+  form1040: 'https://www.irs.gov/filing/where-to-file-addresses-for-taxpayers-and-tax-professionals-filing-form-1040',
+  form1040x: 'https://www.irs.gov/filing/where-to-file-addresses-for-taxpayers-and-tax-professionals-filing-form-1040x',
+};
+
+export function mailingAddress(state, kind) {
+  const st = (state || '').toUpperCase();
+  if (kind === '1040x' && AUSTIN_GROUP.includes(st)) {
+    return { lines: ['Department of the Treasury', 'Internal Revenue Service', 'Austin, TX 73301-0052'],
+             note: 'Same address whether or not a payment is enclosed.', verified: '2026-08-10' };
+  }
+  if (kind === '1040' && st === 'TX') {
+    return { lines: ['Department of the Treasury', 'Internal Revenue Service', 'Austin, TX 73301-0002'],
+             note: 'This is the no-payment / refund address. A return WITH a payment goes to Charlotte, NC instead.',
+             verified: '2026-08-10' };
+  }
+  return null;
+}
+
+/** Tax years the IRS e-file system accepts: the current year plus two prior. */
+export function efileWindow(today = new Date()) {
+  const y = today.getUTCFullYear();
+  // The window rolls at the annual MeF cutover, historically somewhere between
+  // mid-November and late December. Before the cutover the newest accepted
+  // year is last year's; the exact 2026 date has not been announced.
+  const newest = today.getUTCMonth() >= 11 ? y : y - 1;
+  return { years: [newest, newest - 1, newest - 2], newest };
+}
+
+export const LINKS = {
+  amendedStatus: 'https://www.irs.gov/filing/wheres-my-amended-return',
+  freeTaxUsaPrior: 'https://www.freetaxusa.com/prior-year/',
+  quickAlerts: 'https://www.irs.gov/e-file-providers/quickalerts-library',
+};
+
 /* ───────────────────────────────  the plan  ───────────────────────────── */
 
 /**
  * Turn results into filing instructions. A number without a next action is a
  * fact, not a plan — and facts do not get money back.
  */
-export function buildSteps(rows, { claimantName = 'your parents' } = {}) {
+export function buildSteps(rows, { claimantName = 'your parents', state = '' } = {}) {
+  const PART = PART_EXPLANATION();
+  const win = efileWindow();
   const live = rows.filter(r => r.result.ok && r.result.net > 0 && r.days >= 0)
                    .sort((a, b) => a.days - b.days);
   const steps = [];
@@ -414,6 +498,7 @@ export function buildSteps(rows, { claimantName = 'your parents' } = {}) {
 
   for (const r of live) {
     const res = r.result;
+    const yr = r.year;
     push({
       who: r.studentName,
       head: `${r.year}: ${r.studentName} reports the scholarship as income`,
@@ -422,7 +507,7 @@ export function buildSteps(rows, { claimantName = 'your parents' } = {}) {
       body:
         `Report ${C.fmt(res.reportOnLine8r, { cents: true })} on Schedule 1, line 8r ("Scholarship and fellowship grants not reported on Form W-2"). Making part of the scholarship taxable is what frees an equal amount of tuition to support the credit. ` +
         (r.returnFiled
-          ? 'On Form 1040-X, column A is what was originally reported, column B the change, column C the corrected figure. In Part III say plainly that the student is electing to include scholarship in income under Pub. 970 so that qualified tuition supports the credit.'
+          ? `On Form 1040-X, column A is what was originally reported, column B the change, column C the corrected figure. In ${PART} — "Explanation of Changes" — say plainly that the student is electing to include scholarship in income under Pub. 970 so that qualified tuition supports the credit.`
           : `This year was never filed, so it is an ORIGINAL Form 1040, not an amendment. ${
               res.mustFile === false
                 ? 'The student was not even required to file — the dependent threshold is above this income — but file anyway: it is the document showing the scholarship was taken into income, which is what the claimant\'s credit rests on when the IRS matches it against the school\'s 1098-T. A zero-tax return filed late carries no penalty, since the penalty is a percentage of tax owed.'
@@ -430,6 +515,24 @@ export function buildSteps(rows, { claimantName = 'your parents' } = {}) {
             } Not filing does NOT block the credit: it lives on the claimant's return, and their deadline runs from when THEY filed.`) +
         ` Extra tax to the student: ${C.fmt(res.studentTax, { cents: true })}.`,
       cite: '26 U.S.C. 117(a)-(b); 25A(g)(2); Pub. 970 ch. 2',
+      links: r.returnFiled
+        ? [{ label: 'Form 1040-X (current revision — one form, every year)', url: FORM_URL.current('f1040x') },
+           { label: 'Form 1040-X instructions', url: FORM_URL.current('i1040x') },
+           { label: `${yr} Schedule 1`, url: FORM_URL.prior('f1040s1', yr) }]
+        : [{ label: `${yr} Form 1040`, url: FORM_URL.prior('f1040', yr) },
+           { label: `${yr} Schedule 1`, url: FORM_URL.prior('f1040s1', yr) },
+           { label: `${yr} Form 1040 instructions (tax table inside)`, url: FORM_URL.prior('i1040gi', yr) },
+           { label: 'Prepare it free — FreeTaxUSA prior year', url: LINKS.freeTaxUsaPrior }],
+      mail: mailingAddress(state, r.returnFiled ? '1040x' : '1040'),
+      mailLookup: r.returnFiled ? WHERE_TO_FILE.form1040x : WHERE_TO_FILE.form1040,
+      howNotes: r.returnFiled ? [
+        `Write "${yr}" in the calendar-year box at the top — Form 1040-X is one current form used for every year.`,
+        'Both spouses sign a joint amendment, by hand.',
+      ] : [
+        `The IRS e-file system currently accepts ${win.years.join(', ')}, so ${yr} is technically still in range — but consumer software almost universally refuses to e-file prior years, so plan on printing and mailing. A preparer with an EFIN can e-file it.`,
+        "Sign in ink and date it with today's actual date, never backdated. A typed name is not a signature on paper.",
+        'FreeTaxUSA prepares prior-year federal returns for $0. Texas has no state return, so there is nothing further to pay.',
+      ],
     });
     push({
       who: 'Claimant',
@@ -439,6 +542,22 @@ export function buildSteps(rows, { claimantName = 'your parents' } = {}) {
       body: `Attach Form 8863 with a Part III for ${r.studentName}. You need the student's social security number and the school's employer identification number — both are on the Form 1098-T. The credit lands on Form 1040 line 29 (the refundable 40%) and Schedule 3 line 3 (the rest). Expected credit ${C.fmt(res.credit, { cents: true })}, of which ${C.fmt(res.refundable, { cents: true })} comes back even if no tax is owed. File this together with the student's return above so the two tell one story.`,
       cite: '26 U.S.C. 25A(g)(3); 25A(i)',
       blockedBy: `the ${r.year} student return`,
+      links: [
+        { label: 'Form 1040-X (current revision — one form, every year)', url: FORM_URL.current('f1040x') },
+        { label: 'Form 1040-X instructions', url: FORM_URL.current('i1040x') },
+        { label: `${yr} Form 8863 — must be this year's version`, url: FORM_URL.prior('f8863', yr) },
+        { label: `${yr} Form 8863 instructions`, url: FORM_URL.prior('i8863', yr) },
+      ],
+      mail: mailingAddress(state, '1040x'),
+      mailLookup: WHERE_TO_FILE.form1040x,
+      howNotes: [
+        `Put the explanation in ${PART} of Form 1040-X, "Explanation of Changes": failed to claim the American Opportunity Credit under IRC 25A for a qualifying student; Form 8863 attached. The December 2025 revision RENUMBERED this form — older guidance says Part III, which is now Direct Deposit and must be left blank on a paper filing.`,
+        `Form 1040-X is not year-specific, but the Form 8863 attached to it must be the ${yr} version. Write "${yr}" in the calendar-year box.`,
+        'Assemble attachments behind the corrected Form 1040 in Attachment Sequence order — the number is printed at the top right of each form.',
+        'Do NOT attach the Form 1098-T. It is an information return you keep; the school already sent the IRS its copy.',
+        `Form 1040-X can be e-filed for ${win.years.join(', ')}, so ${yr} is in range today. FreeTaxUSA charges roughly $18 per amended year.`,
+        'Both spouses must sign a joint amendment, by hand, on paper.',
+      ],
     });
   }
 

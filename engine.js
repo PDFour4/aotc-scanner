@@ -27,7 +27,7 @@
 
 /** Bump on every release. The service worker keys its cache off this, so an
  *  old cached copy is discarded rather than served forever. */
-export const VERSION = '1.2.0';
+export const VERSION = '1.3.0';
 
 /* ────────────────────────────────  money  ─────────────────────────────── */
 
@@ -681,3 +681,105 @@ export function readiness(input, res) {
   }[level];
   return { level, label, items, blocking, material };
 }
+
+/* ────────────────── filling it in: the line-by-line answer key ────────── */
+
+/**
+ * Form line numbers, by year.
+ *
+ * These MOVE. The 2025 Form 1040 split line 12 into 12a/12b/12e; 2023 and 2024
+ * share a layout. So this is dated data, like the rules and like the 1040-X
+ * part numbering — never a hardcoded string.
+ *
+ * Every entry carries a NAME as well as a number, because the name is what
+ * actually locates the box if a number ever drifts. A caption you can read off
+ * the page beats a number you have to trust.
+ */
+const LINES = {
+  2023: { wages: '1a', schedule1: '8', totalIncome: '9', adjustments: '10',
+          agi: '11', stdDed: '12', taxable: '15', tax: '16', totalTax: '24',
+          withheld: '25a', payments: '33', refund: '34', owed: '37',
+          dependentBox: 'the "Someone can claim: You as a dependent" box, top right' },
+  2024: { wages: '1a', schedule1: '8', totalIncome: '9', adjustments: '10',
+          agi: '11', stdDed: '12', taxable: '15', tax: '16', totalTax: '24',
+          withheld: '25a', payments: '33', refund: '34', owed: '37',
+          dependentBox: 'the "Someone can claim: You as a dependent" box, top right' },
+  2025: { wages: '1a', schedule1: '8', totalIncome: '9', adjustments: '10',
+          agi: '11a', stdDed: '12e', taxable: '15', tax: '16', totalTax: '24',
+          withheld: '25a', payments: '33', refund: '34', owed: '37',
+          dependentBox: 'line 12a, "Someone can claim: You as a dependent"' },
+};
+
+/**
+ * What the finished return should say, line by line.
+ *
+ * This is the answer to "the software is asking me things and I do not know
+ * what to type." Whatever screens a given product puts in front of you, and
+ * whatever it calls them, the finished return has to come out matching this.
+ * Check the PDF preview against it before filing and you cannot be far wrong.
+ */
+export function returnSheet(input, res, { year } = {}) {
+  const y = year || input.year;
+  const L = LINES[y] || LINES[2024];
+  if (!res || res.reportOnLine8r === null) return null;
+
+  const wages = input.wages || 0;
+  const sch1 = res.reportOnLine8r;
+
+  return {
+    year: y,
+    layoutVerified: !!LINES[y],
+    schedule1: [
+      { line: '8r', name: 'Scholarship and fellowship grants not reported on Form W-2',
+        value: sch1, note: 'This is the entry the whole thing turns on.' },
+      { line: '9', name: 'Total other income — add lines 8a through 8z', value: sch1 },
+      { line: '10', name: 'Combine lines 1 through 7 and 9', value: sch1,
+        note: `Carries to Form 1040 line ${L.schedule1}.` },
+    ],
+    form1040: [
+      { line: L.wages, name: 'Total amount from Form(s) W-2, box 1', value: wages,
+        note: wages === 0 ? 'Leave blank or zero — no W-2 for this year.' : null },
+      { line: L.schedule1, name: 'Additional income from Schedule 1, line 10', value: sch1 },
+      { line: L.totalIncome, name: 'Total income', value: C.add(wages, sch1) },
+      { line: L.adjustments, name: 'Adjustments to income (Schedule 1, line 26)', value: 0 },
+      { line: L.agi, name: 'Adjusted gross income', value: res.studentAgi },
+      { line: L.stdDed, name: 'Standard deduction', value: res.studentStdDed,
+        note: `Limited because the student is claimed as a dependent — earned income plus the year's add-on, capped. Taxable scholarship counts as EARNED income here, which is why it rises with the amount reported. IRC 63(c)(5).` },
+      { line: L.taxable, name: 'Taxable income', value: res.studentTaxable },
+      { line: L.tax, name: 'Tax', value: res.studentTax,
+        note: res.studentTax === 0 ? 'Zero, so no penalty for filing late.' : 'From the IRS Tax Table.' },
+      { line: L.totalTax, name: 'Total tax', value: res.studentTax },
+      { line: L.withheld, name: 'Federal income tax withheld from Form(s) W-2', value: 0 },
+      { line: L.payments, name: 'Total payments', value: 0 },
+      { line: res.studentTax > 0 ? L.owed : L.refund,
+        name: res.studentTax > 0 ? 'Amount you owe' : 'Amount overpaid',
+        value: res.studentTax },
+    ],
+    mustCheck: [
+      `Tick ${L.dependentBox}. This is what limits the standard deduction — leave it unticked and the return is wrong in the taxpayer's favour, which is the kind of wrong that gets noticed.`,
+      'Filing status: Single.',
+      'Do NOT claim an education credit on this return. The student is a dependent, so the credit belongs to whoever claims them. IRC 25A(g)(3).',
+    ],
+    skip: [
+      'Interest income (1099-INT)', 'Dividends (1099-DIV)',
+      'Unemployment (1099-G)', 'Social Security (SSA-1099)',
+      'Retirement income (1099-R)', 'State tax refund (1099-G)',
+      'Stocks and investments sold (1099-B)', 'Capital loss carryovers',
+      'Self-employment / business income', 'Rental income',
+    ],
+  };
+}
+
+/**
+ * Where the entry lives in the consumer products, where that is documented.
+ *
+ * Kept short and few on purpose. Vendor menus are renamed constantly, so this
+ * is a pointer, not a script — the answer key above is the thing that stays
+ * true. Verified 10 August 2026.
+ */
+export const SOFTWARE_HINTS = [
+  { product: 'FreeTaxUSA',
+    path: 'Income → Uncommon Income → Other Income → "Other Sources of Income"',
+    note: 'That is the route for taxable scholarship with no W-2. There is also a 1098-T route under Deductions/Credits → College Tuition (1098-T), but on a DEPENDENT student\'s own return that path is about the credit, which this student cannot take — so the Other Income route is the cleaner one here.',
+    url: 'https://www.freetaxusa.com/answer/3576/Scholarships-and-Grants/' },
+];

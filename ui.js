@@ -435,6 +435,57 @@ function paintYearOutputs(all) {
   }
 }
 
+/**
+ * The answer key. The single most useful thing the app can hand someone who is
+ * staring at a tax product's interview and does not know what to type: what
+ * the finished return has to say. Whatever screens the software shows and
+ * whatever it calls them, the PDF preview must come out matching this.
+ */
+function answerKey(sheet) {
+  const d = el('details', { class: 'ready key' });
+  d.append(el('summary', {}, 'Filling it in — every line, with the answer'));
+  const body = el('div', { class: 'ready-body' });
+
+  body.append(el('p', { class: 'key-lead' },
+    'Tax software will ask its own questions in its own order. Ignore that and ',
+    el('b', {}, 'check the finished return against this'),
+    ' before you file — every product lets you preview the PDF.'));
+
+  const table = (title, lines) => {
+    const wrap = el('div', { class: 'keytab' }, el('p', { class: 'mail-h' }, title));
+    const tb = el('table', {});
+    tb.append(el('tbody', {}, ...lines.map(l => el('tr', {},
+      el('td', { class: 'kl' }, 'line ' + l.line),
+      el('td', {}, l.name, l.note ? el('span', { class: 'kn' }, l.note) : null),
+      el('td', { class: 'num' }, E.C.fmt(l.value, { cents: true }))))));
+    wrap.append(tb);
+    return wrap;
+  };
+  body.append(table('Schedule 1', sheet.schedule1));
+  body.append(table(`Form 1040 (${sheet.year})`, sheet.form1040));
+
+  body.append(el('div', { class: 'keytab' },
+    el('p', { class: 'mail-h' }, 'Do not miss these'),
+    el('ul', { class: 'hownotes' }, ...sheet.mustCheck.map(m => el('li', {}, m)))));
+
+  body.append(el('div', { class: 'keytab' },
+    el('p', { class: 'mail-h' }, 'Leave every one of these blank'),
+    el('p', { class: 'skips' }, sheet.skip.join(' · ')),
+    el('p', { class: 'mail-n' },
+      'A tax product shows everyone the same list of income types. For this return only the scholarship line applies.')));
+
+  for (const h of E.SOFTWARE_HINTS) {
+    body.append(el('div', { class: 'keytab' },
+      el('p', { class: 'mail-h' }, 'In ' + h.product),
+      el('p', { class: 'keypath' }, h.path),
+      el('p', { class: 'mail-n' }, h.note, ' ',
+        el('a', { href: h.url, target: '_blank', rel: 'noopener' }, 'Their help page'),
+        '. Menus get renamed — the table above is what stays true.')));
+  }
+  d.append(body);
+  return d;
+}
+
 const CONF = { blocked: 'critical', rough: 'critical', close: 'warning', solid: 'good' };
 const CONF_ICON = { blocked: '✕', rough: '!', close: '▲', solid: '●' };
 
@@ -553,6 +604,14 @@ function paintSteps(live) {
     claimantName: state.claimant.name || 'your parents',
     state: state.claimant.state || '',
   });
+  // Give each student-return step its own line-by-line answer key.
+  for (const s of steps) {
+    const m = /^(\d{4}): .* reports the scholarship/.exec(s.head);
+    if (!m) continue;
+    const row = live.find(r => r.year === Number(m[1])
+      && s.head.includes(r.studentName));
+    if (row) s.sheet = E.returnSheet(row.input, row.result, { year: row.year });
+  }
   const host = $('#steps');
   host.textContent = '';
   for (const s of steps) {
@@ -581,6 +640,7 @@ function paintSteps(live) {
           el('span', { class: 'lk-ic' }, '↗'), l.label))) : null,
       s.howNotes ? el('ul', { class: 'hownotes' },
         ...s.howNotes.map(n => el('li', {}, n))) : null,
+      s.sheet ? answerKey(s.sheet) : null,
       s.mail ? el('div', { class: 'mailbox' },
         el('p', { class: 'mail-h' }, 'Mail it to'),
         el('address', {}, ...s.mail.lines.map(l => el('div', {}, l))),

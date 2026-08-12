@@ -358,6 +358,70 @@ is('no state at all returns null', E.mailingAddress('', '1040x'), null);
     student.howNotes.some(n => /refuses to e-file prior years/.test(n)), true);
 }
 
+/* ─────────────────────── the line-by-line answer key ───────────────── */
+group('returnSheet — what the finished return must say');
+
+{
+  const inp = { year:2023, box1:$(31360), box5:$(34541), wages:0, magi:$(120000),
+    filingStatus:'mfj', priorYearsUsed:0, completedFourYears:false };
+  const r = E.optimalElection(inp);
+  const sh = E.returnSheet(inp, r);
+  const l40 = (n) => sh.form1040.find(x => x.line === n).value;
+  const s1 = (n) => sh.schedule1.find(x => x.line === n).value;
+
+  money('Schedule 1 line 8r carries the scholarship', s1('8r'), 7181);
+  money('Schedule 1 line 10 totals it', s1('10'), 7181);
+  money('1040 line 1a is zero — no W-2 that year', l40('1a'), 0);
+  money('1040 line 8 picks up Schedule 1', l40('8'), 7181);
+  money('1040 line 11 is AGI', l40('11'), 7181);
+  money('1040 line 12 is the LIMITED dependent deduction', l40('12'), 7581);
+  money('1040 line 15 taxable income is nil', l40('15'), 0);
+  money('1040 line 16 tax is nil', l40('16'), 0);
+
+  is('the sheet insists the dependent box is ticked',
+    sh.mustCheck.some(m => /Someone can claim/.test(m)), true);
+  is('...and warns the return would otherwise favour the taxpayer',
+    sh.mustCheck.some(m => /taxpayer's favour/.test(m)), true);
+  is('it forbids claiming the credit on the student\'s own return',
+    sh.mustCheck.some(m => /25A\(g\)\(3\)/.test(m)), true);
+  is('it lists the income screens to leave blank', sh.skip.length >= 8, true);
+  is('1099-B is on the skip list', sh.skip.some(s => /1099-B/.test(s)), true);
+  is('the 2023 layout is one we carry', sh.layoutVerified, true);
+}
+{
+  // Form 1040 line numbers MOVE between years: 2025 split line 12 into
+  // 12a/12b/12e. A sheet that hardcoded "line 12" would be quietly wrong.
+  const inp = { year:2025, box1:$(66283), box5:$(66697), wages:$(14644),
+    magi:$(120000), filingStatus:'mfj', priorYearsUsed:0, completedFourYears:false };
+  const sh = E.returnSheet(inp, E.optimalElection(inp));
+  is('2025 puts the standard deduction on line 12e',
+    sh.form1040.some(l => l.line === '12e'), true);
+  is('...and AGI on line 11a', sh.form1040.some(l => l.line === '11a'), true);
+  is('2023 and 2024 keep the older numbering',
+    E.returnSheet({ year:2024, box1:$(10000), box5:0, wages:0 },
+      E.computeYear({ year:2024, box1:$(10000), box5:0, wages:0, magi:$(50000),
+        filingStatus:'single', priorYearsUsed:0, completedFourYears:false }))
+      .form1040.some(l => l.line === '12'), true);
+}
+{
+  const wages = { year:2024, box1:$(63893), box5:$(65569), wages:$(17189),
+    taxAsFiled:$(259), elect:$(4000), magi:$(120000), filingStatus:'mfj',
+    priorYearsUsed:0, completedFourYears:false };
+  const sh = E.returnSheet(wages, E.computeYear(wages));
+  const l = (n) => sh.form1040.find(x => x.line === n).value;
+  money('a year WITH wages shows them on line 1a', l('1a'), 17189);
+  money('total income adds wages and scholarship', l('9'), 22865);
+  money('the deduction is capped, not earned-income-plus-450', l('12'), 14600);
+  money('and the tax is the Tax Table figure', l('16'), 828);
+}
+is('every line carries a NAME, so a drifted number is still findable',
+  E.returnSheet({ year:2023, box1:$(10000), box5:0, wages:0 },
+    E.computeYear({ year:2023, box1:$(10000), box5:0, wages:0, magi:$(50000),
+      filingStatus:'single', priorYearsUsed:0, completedFourYears:false }))
+    .form1040.every(l => !!l.name && !!l.line), true);
+is('a software hint points at a documented help page',
+  E.SOFTWARE_HINTS.every(h => h.url.startsWith('https://') && h.path.includes('→')), true);
+
 /* ─────────────────────────────── report ────────────────────────────── */
 const s = document.getElementById('summary');
 s.innerHTML = fail === 0

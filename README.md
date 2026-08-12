@@ -64,6 +64,24 @@ are the cell boundaries for the checkboxes. That last one matters — boxes 8 an
 9 sit side by side, so nearest-label matching read a half-time undergraduate as
 a graduate student, which denies the credit outright.
 
+## The answer key
+
+The step that says "report $7,181 on Schedule 1 line 8r" is useless the moment
+you open FreeTaxUSA, because FreeTaxUSA never shows you Schedule 1. It shows
+you a list of income types and asks which apply.
+
+So every student-return step carries **"Filling it in — every line, with the
+answer"**: what Schedule 1 and Form 1040 must say, line by line, with the box
+you must tick, the ten income screens to leave blank, and — where it is
+documented — the menu path in the actual product.
+
+Line numbers are stored **per year**, because they move: the 2025 Form 1040
+split line 12 into 12a/12b/12e. Every line carries its caption as well as its
+number, so a drifted number is still findable by reading the page.
+
+Whatever a tax product asks and whatever it calls its screens, the finished
+return has to come out matching that table. Preview the PDF and compare.
+
 ## It tells you what it doesn't know
 
 Every year carries a confidence chip and a **"what would sharpen this"** panel,

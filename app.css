@@ -276,3 +276,18 @@ ul.hownotes li::before{content:"";position:absolute;left:-13px;top:8px;width:5px
         text-transform:uppercase;color:var(--muted)}
 .mailbox address{font-style:normal;font-size:14px;line-height:1.5;color:var(--ink)}
 .mail-n{margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
+
+/* the line-by-line answer key */
+details.key summary{font-weight:600;color:var(--ink)}
+.key-lead{margin:0 0 4px;font-size:13px;color:var(--ink-2);line-height:1.55}
+.keytab{margin-top:14px}
+.keytab table{min-width:0;font-size:13px}
+.keytab td{padding:7px 8px;vertical-align:top;border-bottom:1px solid var(--grid)}
+.keytab tr:last-child td{border-bottom:0}
+td.kl{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums;width:64px}
+.kn{display:block;color:var(--muted);font-size:12px;line-height:1.5;margin-top:3px}
+.keytab td.num{font-weight:650;white-space:nowrap}
+.skips{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.7}
+.keypath{margin:0 0 6px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+         color:var(--ink);background:var(--page);border:1px solid var(--edge);
+         border-radius:6px;padding:8px 10px}
